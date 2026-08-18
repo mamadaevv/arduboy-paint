@@ -42,10 +42,13 @@ bool bHandled = false;
 unsigned long abStart = 0;
 bool awaitRelease = false;   // после смены экрана ждём отпускания всех кнопок
 
+bool splashReady = false;   // становится true после отпускания кнопок на сплэше
+
 // смена экрана с защитой от залипа
 void goScreen(Screen s) {
   screen = s;
   awaitRelease = true;
+  if (s == SPLASH) splashReady = false;  // сплэш ждёт свежего нажатия (пасхалка-возврат)
 }
 
 // ===== сетка =====
@@ -107,12 +110,13 @@ void loop() {
 
     // ---------- СПЛЭШ ----------
     case SPLASH: {
+      if (arduboy.buttonsState() == 0) splashReady = true;  // отпустили -> готовы к переходу
       bool anyReleased =
           arduboy.justReleased(UP_BUTTON) || arduboy.justReleased(DOWN_BUTTON) ||
           arduboy.justReleased(LEFT_BUTTON) || arduboy.justReleased(RIGHT_BUTTON) ||
           arduboy.justReleased(A_BUTTON) || arduboy.justReleased(B_BUTTON);
-      // уходим ТОЛЬКО по отпусканию кнопки (без таймаута — не уходит сам)
-      if (anyReleased && !awaitRelease) {
+      // уходим ТОЛЬКО по отпусканию КНОПКИ (и только если сплэш "готов" — свежее нажатие)
+      if (anyReleased && !awaitRelease && splashReady) {
         goScreen(MENU);
         menuSel = 0;
       }
@@ -123,9 +127,14 @@ void loop() {
     case MENU: {
       if (arduboy.justPressed(UP_BUTTON))   menuSel = (menuSel + 2) % 3;
       if (arduboy.justPressed(DOWN_BUTTON)) menuSel = (menuSel + 1) % 3;
+      // A — выбор пункта
       if (arduboy.justReleased(A_BUTTON) && !awaitRelease) {
         if (menuSel == 2) { goScreen(SIZE_SELECT); sizeSel = 1; }
         else { goScreen(SOON); soonStart = millis(); }
+      }
+      // B — пасхалка: вернуться на сплэш (без подписи в меню)
+      else if (arduboy.justReleased(B_BUTTON) && !awaitRelease) {
+        goScreen(SPLASH);
       }
       break;
     }
@@ -148,7 +157,11 @@ void loop() {
       if (arduboy.justPressed(LEFT_BUTTON)) sizeSel = (sizeSel + 2) % 4;
       if (arduboy.justPressed(RIGHT_BUTTON)) sizeSel = (sizeSel + 2) % 4;
       if (arduboy.justPressed(B_BUTTON)) { goScreen(MENU); }
-      else if (arduboy.justReleased(A_BUTTON) && !awaitRelease) { goScreen(HELP); helpOff = 0; }
+      else if (arduboy.justReleased(A_BUTTON) && !awaitRelease) {
+        // A+B (tap) — открыть справку; просто A — сразу в рисование
+        if (arduboy.pressed(B_BUTTON)) { goScreen(HELP); helpOff = 0; }
+        else { enterPaint(); }
+      }
       break;
     }
 
@@ -296,7 +309,7 @@ void loop() {
       arduboy.print(F("px"));
     }
     arduboy.setCursor(8, 56);
-    arduboy.print(F("A:OK  B:Back"));
+    arduboy.print(F("A:Paint  B:Back"));
   } else if (screen == HELP) {
     arduboy.clear();
     arduboy.setTextSize(1);
