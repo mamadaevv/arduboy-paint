@@ -3,8 +3,8 @@
 Arduboy2 arduboy;
 
 // ===== состояние экрана (сцены) =====
-enum Screen { SPLASH, MENU, SOON, SIZE_SELECT, HELP, PAINT, SPLASH_EXIT, MENU_EXIT };
-Screen screen = SPLASH;
+enum Screen { SPLASH_INTRO, SPLASH, MENU, SOON, SIZE_SELECT, HELP, PAINT, SPLASH_EXIT, MENU_EXIT };
+Screen screen = SPLASH_INTRO;
 
 // ===== настройки сетки (меняются в рантайме) =====
 uint8_t cell = 4;        // текущий размер пикселя/кисти
@@ -31,6 +31,8 @@ unsigned long soonStart = 0;
 int transShift = 0;          // смещение анимации перехода (px)
 unsigned long transStart = 0; // время старта перехода
 const unsigned long TRANS_MS = 350; // длительность анимации
+unsigned long introStart = 0; // время старта анимации появления лого
+const unsigned long INTRO_MS = 900; // длительность появления (мерцание)
 
 // ===== Paint: состояние =====
 const uint16_t HIST_MAX = 32;
@@ -110,6 +112,7 @@ void setup() {
   arduboy.bootLogo();
   arduboy.setFrameRate(60);
   splashStart = millis();
+  introStart = millis();   // старт анимации появления лого
 }
 
 void loop() {
@@ -120,6 +123,29 @@ void loop() {
   if (arduboy.buttonsState() == 0) navLock = false;
 
   switch (screen) {
+
+    // ---------- ПОЯВЛЕНИЕ ЛОГО (только при включении) ----------
+    case SPLASH_INTRO: {
+      unsigned long t = millis() - introStart;
+      if (t >= INTRO_MS) { transition(SPLASH); break; }
+      // мерцание с не-линейным затуханием:
+      // вспышки всё дольше видимы, паузы всё короче -> в конце "замерло"
+      // фаза 0..1
+      float p = (float)t / (float)INTRO_MS;
+      // длительность "вкл" растёт 40мс -> 260мс, период сокращается
+      unsigned long period = 300 - (unsigned long)(p * 180); // 300 -> 120
+      unsigned long onDur  = 40  + (unsigned long)(p * 220);  // 40  -> 260
+      unsigned long ph = t % period;
+      bool show = (ph < onDur);
+      arduboy.clear();
+      if (show) {
+        // лого целиком, без мигания "press any key" (он появится в SPLASH)
+        arduboy.setTextSize(2);
+        arduboy.setCursor(10, 18);
+        arduboy.print(F("Pixel Pic"));
+      }
+      break;
+    }
 
     // ---------- СПЛЭШ ----------
     case SPLASH: {
