@@ -40,7 +40,6 @@ const unsigned long REPEAT = 180;
 unsigned long bPressStart = 0;
 bool bHandled = false;
 unsigned long abStart = 0;
-bool canvasEmpty = true;   // холст пустой -> B tap возвращает в меню
 
 // ===== навигация: машина сцен =====
 // navLock ставится при ЛЮБОМ переходе и снимается только когда ВСЕ кнопки
@@ -70,6 +69,11 @@ void pushChange(uint8_t gx, uint8_t gy, bool oldVal) {
   uint16_t idx = gx + (uint16_t)gy * gw;
   history[histHead++] = (idx << 1) | (oldVal ? 1 : 0);
 }
+// реальная пустота холста: все биты сетки = 0
+bool isCanvasEmpty() {
+  for (uint16_t i = 0; i < sizeof(grid); i++) if (grid[i]) return false;
+  return true;
+}
 void drawRegion(int16_t x, int16_t y, int16_t w, int16_t h) {
   for (int16_t py = y; py < y + h; py++) {
     if (py < 0 || py > 63) continue;
@@ -93,7 +97,6 @@ void enterPaint() {
   prevCx = cx; prevCy = cy;
   lastMove = millis();
   abStart = 0;
-  canvasEmpty = true;
   arduboy.clear();
   transition(PAINT);
 }
@@ -213,7 +216,6 @@ void loop() {
           bool old = getCell(gx, gy);
           aTarget = !old;
           if (aTarget != old) { setCell(gx, gy, aTarget); pushChange(gx, gy, old); }
-          canvasEmpty = false;   // что-то нарисовали -> B больше не "назад"
         }
         if (arduboy.pressed(A_BUTTON)) {
           uint8_t gx = cx / cell, gy = cy / cell;
@@ -227,13 +229,12 @@ void loop() {
           if (millis() - bPressStart >= 500) {
             for (uint16_t i = 0; i < sizeof(grid); i++) grid[i] = 0;
             histHead = 0;
-            canvasEmpty = true;
             arduboy.clear();
             bHandled = true;
           }
         }
         if (arduboy.justReleased(B_BUTTON) && !bHandled) {
-          if (canvasEmpty) { transition(MENU); break; }
+          if (isCanvasEmpty()) { transition(MENU); break; }
           if (histHead > 0) {
             uint16_t rec = history[--histHead];
             bool oldVal = rec & 1;
