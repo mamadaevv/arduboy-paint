@@ -2,7 +2,7 @@
 
 Arduboy2 arduboy;
 
-// ===== состояние экрана =====
+// ===== состояние экрана (сцены) =====
 enum Screen { SPLASH, MENU, SOON, SIZE_SELECT, HELP, PAINT };
 Screen screen = SPLASH;
 
@@ -40,17 +40,23 @@ const unsigned long REPEAT = 180;
 unsigned long bPressStart = 0;
 bool bHandled = false;
 unsigned long abStart = 0;
-bool awaitRelease = false;   // после смены экрана ждём отпускания всех кнопок
 
-// смена экрана с защитой от залипа
-void goScreen(Screen s) {
-  Serial.print(F("goScreen "));
+// ===== навигация: машина сцен =====
+// navLock ставится при ЛЮБОМ переходе и снимается только когда ВСЕ кнопки
+// отпущены хотя бы на один кадр. => одно физическое нажатие = один переход.
+bool navLock = false;
+
+void transition(Screen s) {
+  Serial.print(F("transition "));
   Serial.print(screen);
   Serial.print(F(" -> "));
   Serial.println(s);
   screen = s;
-  awaitRelease = true;
+  navLock = true;
 }
+
+// навигационное нажатие: фронт кнопки + мы не заблокированы
+#define NAV(b) (arduboy.justPressed(b) && !navLock)
 
 // ===== сетка =====
 bool getCell(uint8_t gx, uint8_t gy) {
@@ -91,7 +97,7 @@ void enterPaint() {
   lastMove = millis();
   abStart = 0;
   arduboy.clear();
-  goScreen(PAINT);
+  transition(PAINT);
 }
 
 void setup() {
@@ -107,19 +113,18 @@ void setup() {
 void loop() {
   if (!arduboy.nextFrame()) return;
   arduboy.pollButtons();
-  if (arduboy.buttonsState() == 0) awaitRelease = false;  // все кнопки отпущены -> снимаем гвард (защита от залипа)
+
+  // снять блок навигации только когда все кнопки отпущены
+  if (arduboy.buttonsState() == 0) navLock = false;
 
   switch (screen) {
 
     // ---------- СПЛЭШ ----------
     case SPLASH: {
-      bool anyReleased =
-          arduboy.justReleased(UP_BUTTON) || arduboy.justReleased(DOWN_BUTTON) ||
-          arduboy.justReleased(LEFT_BUTTON) || arduboy.justReleased(RIGHT_BUTTON) ||
-          arduboy.justReleased(A_BUTTON) || arduboy.justReleased(B_BUTTON);
-      // уходим по отпусканию любой кнопки
-      if (anyReleased && !awaitRelease) {
-        goScreen(MENU);
+      // любая кнопка -> Меню (по фронту нажатия)
+      if (NAV(UP_BUTTON) || NAV(DOWN_BUTTON) || NAV(LEFT_BUTTON) ||
+          NAV(RIGHT_BUTTON) || NAV(A_BUTTON) || NAV(B_BUTTON)) {
+        transition(MENU);
         menuSel = 0;
       }
       break;
@@ -129,29 +134,22 @@ void loop() {
     case MENU: {
       if (arduboy.justPressed(UP_BUTTON))   menuSel = (menuSel + 2) % 3;
       if (arduboy.justPressed(DOWN_BUTTON)) menuSel = (menuSel + 1) % 3;
-      // A — выбор пункта
-      if (arduboy.justReleased(A_BUTTON) && !awaitRelease) {
-        if (menuSel == 1) { goScreen(SIZE_SELECT); sizeSel = 1; }
-        else if (menuSel == 2) { goScreen(HELP); helpOff = 0; }
-        else { goScreen(SOON); soonStart = millis(); }
+      if (NAV(A_BUTTON)) {
+        if (menuSel == 1) { transition(SIZE_SELECT); sizeSel = 1; }
+        else if (menuSel == 2) { transition(HELP); helpOff = 0; }
+        else { transition(SOON); soonStart = millis(); }
       }
-      // B — назад на сплэш
-      else if (arduboy.justReleased(B_BUTTON) && !awaitRelease) {
-        goScreen(SPLASH);
+      else if (NAV(B_BUTTON)) {
+        transition(SPLASH);
       }
       break;
     }
 
-    // ---------- ЗАГЛУШКА ----------
+    // ---------- ЗАГЛУШКА (выход ТОЛЬКО по кнопке, без таймаута) ----------
     case SOON: {
-      bool back = (millis() - soonStart > 1500 ||
-          arduboy.justPressed(UP_BUTTON) || arduboy.justPressed(DOWN_BUTTON) ||
-          arduboy.justPressed(LEFT_BUTTON) || arduboy.justPressed(RIGHT_BUTTON) ||
-          arduboy.justPressed(A_BUTTON) || arduboy.justPressed(B_BUTTON));
-      if (back) {
-        Serial.print(F("SOON exit, raw buttons="));
-        Serial.println(arduboy.buttonsState());
-        goScreen(MENU);
+      if (NAV(UP_BUTTON) || NAV(DOWN_BUTTON) || NAV(LEFT_BUTTON) ||
+          NAV(RIGHT_BUTTON) || NAV(A_BUTTON) || NAV(B_BUTTON)) {
+        transition(MENU);
       }
       break;
     }
@@ -162,8 +160,8 @@ void loop() {
       if (arduboy.justPressed(DOWN_BUTTON)) sizeSel = (sizeSel + 1) % 4;
       if (arduboy.justPressed(LEFT_BUTTON)) sizeSel = (sizeSel + 2) % 4;
       if (arduboy.justPressed(RIGHT_BUTTON)) sizeSel = (sizeSel + 2) % 4;
-      if (arduboy.justPressed(B_BUTTON)) { goScreen(MENU); }
-      else if (arduboy.justReleased(A_BUTTON) && !awaitRelease) { enterPaint(); }
+      if (NAV(B_BUTTON)) { transition(MENU); }
+      else if (NAV(A_BUTTON)) { enterPaint(); }
       break;
     }
 
@@ -176,8 +174,8 @@ void loop() {
       if (arduboy.justPressed(DOWN_BUTTON)) helpOff += ROW_H;
       if (helpOff < HELP_MIN) helpOff = HELP_MIN;
       if (helpOff > HELP_MAX) helpOff = HELP_MAX;
-      if (arduboy.justPressed(B_BUTTON)) { goScreen(MENU); }
-      else if (arduboy.justReleased(A_BUTTON) && !awaitRelease) { enterPaint(); }
+      if (NAV(B_BUTTON)) { transition(MENU); }
+      else if (NAV(A_BUTTON)) { enterPaint(); }
       break;
     }
 
@@ -187,7 +185,7 @@ void loop() {
       bool ab = arduboy.pressed(A_BUTTON) && arduboy.pressed(B_BUTTON);
       if (ab) {
         if (abStart == 0) abStart = millis();
-        if (millis() - abStart >= 500) { goScreen(MENU); menuSel = 0; break; }
+        if (millis() - abStart >= 500) { transition(MENU); menuSel = 0; break; }
       } else {
         abStart = 0;
       }
@@ -271,7 +269,6 @@ void loop() {
     arduboy.setCursor(18, 18);
     arduboy.print(F("Pixel Pic"));
     arduboy.setTextSize(1);
-    // фраза мигает каждые ~400 мс
     if ((millis() / 400) & 1) {
       arduboy.setCursor(30, 44);
       arduboy.print(F("press any key"));
@@ -298,7 +295,6 @@ void loop() {
     arduboy.setTextSize(1);
     arduboy.setCursor(8, 4);
     arduboy.print(F("Pixel size:"));
-    // две колонки: [2px, 4px] | [8px, 16px]
     const uint8_t colX[2] = {20, 72};
     for (uint8_t i = 0; i < 4; i++) {
       uint8_t col = i / 2;
@@ -315,23 +311,21 @@ void loop() {
     arduboy.setTextSize(1);
     arduboy.setCursor(8, 2);
     arduboy.print(F("Help: Paint Mode"));
-    const int ROW_H = 11;          // строка 8px + 3px между -> 11/22/33/44
-    const int TOP = 11;            // верхний край первой строки
-    const int BOT = 52;            // нижний край области (для стрелки)
-    // аффорданс скролла: треугольники остриём к краям области (x=120)
-    if (helpOff > 0) {             // стрелка вверх, остриё в y=11
+    const int ROW_H = 11;
+    const int TOP = 11;
+    const int BOT = 52;
+    if (helpOff > 0) {
       for (uint8_t k = 0; k < 4; k++) {
         arduboy.drawPixel(120 - k, TOP + k);
         arduboy.drawPixel(120 + k, TOP + k);
       }
     }
-    if (helpOff < (HELP_LINES - 1) * ROW_H - 3 * ROW_H) { // стрелка вниз, остриё в y=52
+    if (helpOff < (HELP_LINES - 1) * ROW_H - 3 * ROW_H) {
       for (uint8_t k = 0; k < 4; k++) {
         arduboy.drawPixel(120 - k, BOT - k);
         arduboy.drawPixel(120 + k, BOT - k);
       }
     }
-    // ровно 4 видимые строки на фиксированных y; меняется только содержимое
     uint8_t startIdx = helpOff / ROW_H;
     for (uint8_t r = 0; r < 4; r++) {
       uint8_t i = startIdx + r;
