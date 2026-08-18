@@ -104,7 +104,7 @@ void setup() {
 void loop() {
   if (!arduboy.nextFrame()) return;
   arduboy.pollButtons();
-  if (arduboy.buttonsState() == 0) awaitRelease = false;  // все кнопки отпущены -> снимаем гвард
+  if (arduboy.buttonsState() == 0) awaitRelease = false;  // все кнопки отпущены -> снимаем гвард (защита от залипа)
 
   switch (screen) {
 
@@ -152,16 +152,17 @@ void loop() {
 
     // ---------- ВЫБОР РАЗМЕРА ----------
     case SIZE_SELECT: {
-      if (arduboy.justPressed(UP_BUTTON))   sizeSel = (sizeSel + 3) % 4;
-      if (arduboy.justPressed(DOWN_BUTTON)) sizeSel = (sizeSel + 1) % 4;
-      if (arduboy.justPressed(LEFT_BUTTON)) sizeSel = (sizeSel + 2) % 4;
-      if (arduboy.justPressed(RIGHT_BUTTON)) sizeSel = (sizeSel + 2) % 4;
-      if (arduboy.justPressed(B_BUTTON)) { goScreen(MENU); }
+      // B = Back, но НЕ если зажата A (иначе A+B-комбо сработает как Back)
+      if (arduboy.justPressed(B_BUTTON) && !arduboy.pressed(A_BUTTON)) { goScreen(MENU); }
       else if (arduboy.justReleased(A_BUTTON) && !awaitRelease) {
         // A+B (tap) — открыть справку; просто A — сразу в рисование
         if (arduboy.pressed(B_BUTTON)) { goScreen(HELP); helpOff = 0; }
         else { enterPaint(); }
       }
+      if (arduboy.justPressed(UP_BUTTON))   sizeSel = (sizeSel + 3) % 4;
+      if (arduboy.justPressed(DOWN_BUTTON)) sizeSel = (sizeSel + 1) % 4;
+      if (arduboy.justPressed(LEFT_BUTTON)) sizeSel = (sizeSel + 2) % 4;
+      if (arduboy.justPressed(RIGHT_BUTTON)) sizeSel = (sizeSel + 2) % 4;
       break;
     }
 
@@ -309,7 +310,7 @@ void loop() {
       arduboy.print(F("px"));
     }
     arduboy.setCursor(8, 56);
-    arduboy.print(F("A:Paint  B:Back"));
+    arduboy.print(F("A:Paint B:Back +Help"));
   } else if (screen == HELP) {
     arduboy.clear();
     arduboy.setTextSize(1);
