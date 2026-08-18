@@ -3,70 +3,56 @@
 Pixel-paint sketch for the DIY Arduboy built on an **Arduino Nano (ATmega328p)**
 with an I²C SSD1306 128×64 display, running the `harbaum/Arduboy2` Nano port.
 
-Self-contained: only depends on `Arduboy2` (the Nano port). No external sound/math
-libraries, so it compiles cleanly for the 328p.
+> Self-contained — only depends on `Arduboy2`. No extra libraries.
 
-## Controls
+## Screens (state machine)
+```
+SPLASH ──(release any key)──▶ MENU ──▶ SIZE_SELECT ──▶ HELP ──▶ PAINT
+            │                      │                      │
+            └──────────────────────┴──────────────────────┘  (B = back)
+```
+- **SPLASH** — "Pixel Pic", "press any key" blinks, waits for button release
+- **MENU** — `> Play / Gallery / Paint` (Play & Gallery are "Coming soon" stubs)
+- **SIZE_SELECT** — pixel size **2 / 4 / 8 / 16 px** in two columns; A=OK, B=Back
+- **HELP** — scrollable text (4 visible rows, ←↑↓→ scroll by 1 row, A=OK, B=Back)
+- **PAINT** — the drawing canvas
 
+## Paint controls
 | Input | Action |
 |-------|--------|
-| **← → ↑ ↓** | Move cursor (one grid cell per tap; hold = repeat every ~180 ms) |
-| **A** (tap) | Toggle cell `CELL`×`CELL` (paint if empty, erase if filled) |
-| **A** (hold) | Drag-paint/erase — repeats the first tap's action along the path |
-| **B** (tap) | Undo last A action, one cell at a time (LIFO, 64 steps) |
-| **B** (hold ≥500 ms) | Clear the entire canvas (resets undo history) |
-
-The cursor is a `CELL`×`CELL` checkerboard fill (no border). When idle for ≥1 s it
-animates (the checkerboard pattern inverts every 250 ms).
-
-## Settings
-
-Edit at the top of `Paint.ino`:
-
-```cpp
-const uint8_t CELL = 8;   // grid/brush size in pixels (2, 4, 8, 16 ...)
-```
-
-All logic (grid, cursor, bounds, drawing) is derived from `CELL`. Screen is 128×64,
-so use a value that divides both. **Note:** cursor bounds use `128-CELL` / `64-CELL`
-(not `127`/`63`) so the bottom-right cell stays reachable.
-
-## Hardware
-
-- Arduino Nano, ATmega328p (CH340)
-- I²C SSD1306 128×64 OLED, address 0x3C (SCL→A5, SDA→A4)
-- Buttons wired for the SLIMBOY layout (see the Obsidian note)
+| ← → ↑ ↓ | move brush (grid step, key-repeat on hold) |
+| **A** (tap) | toggle draw/erase on cell |
+| **A** (hold) | drag-paint (repeats the first tap's action) |
+| **B** (tap) | **undo** last A-action (LIFO, 32 steps) |
+| **B** (hold ≥500 ms) | **clear all** |
+| **A + B** (hold ≥500 ms) | **exit to menu** |
 
 ## Build & flash
-
 ```powershell
+# On Windows (Matebook), COM8 = Nano (CH340). FQBN must be atmega328old + -fno-lto
 $bin = 'C:\Users\risow\bin\arduino-cli.exe'
+$sketch = 'D:\Users\risow\Documents\Arduino\arduboy-games-nano\Paint'
 $bp = 'D:\temp\paint_build'
-
-# compile (LTO must be disabled for the 328p link)
-& $bin compile --fqbn arduino:avr:nano:cpu=atmega328old `
-    --build-property 'build.extra_flags=-fno-lto' `
-    --build-path $bp .\Paint.ino
-
-# flash (replace COM8 with the port shown by: arduino-cli board list)
+& $bin compile --fqbn arduino:avr:nano:cpu=atmega328old --build-property 'build.extra_flags=-fno-lto' --build-path $bp $sketch
 & $bin upload -p COM8 --fqbn arduino:avr:nano:cpu=atmega328old --input-dir $bp
 ```
 
-> **Gotcha:** `arduino:avr@1.8.8` LTO breaks the `Arduboy2::begin()` link under the
-> 328p — always build with `-fno-lto`. The display must be SSD1306 @ 0x3C; the CH340
-> port often changes after re-plugging, so always check `board list` first.
+## Hardware
+See `README` in the parent vault / Obsidian note
+`Устройства/Arduino Nano — Paint (Arduboy-порт).md`.
 
-## Fast boot
+| Element | Nano pin |
+|---------|----------|
+| OLED I²C SSD1306 (0x3C) SCL/SDA | A5 / A4 |
+| UP / DOWN / LEFT / RIGHT / A / B | A3 / D2 / A1 / D3 / D4 / A2 |
+| Buzzer | D9 ↔ D11 (no GND) |
 
-`setup()` uses `arduboy.boot()` + `arduboy.bootLogo()` instead of `arduboy.begin()`,
-so it skips `systemButtons()` (the B-at-boot sound menu), `audio.begin()`, and
-`waitNoButtons()`. The logo animation is kept.
+## Gotchas
+- **`-fno-lto` is mandatory** — LTO breaks `Arduboy2::begin()` linking on 328p.
+- Display must be **SSD1306 @ 0x3C**; SH1106 / 0x3D needs a `lcdBootProgram` edit.
+- CH340 changes COM port after USB replug — always check `arduino-cli board list`.
+- RAM is tight (~79%): `grid[256]` (bit-packed, max for 2px mode) + `history[32]`.
+- Help scroll is hand-rolled: `helpOff` (px) shifts rows; out-of-area rows are simply not drawn.
 
-## Sizes (atmega328old, -fno-lto, CELL=8)
-
-- Flash: ~6342 B (20% of 30720)
-- RAM: ~1260 B (61% of 2048, ~788 B free)
-
-## Source
-
-`Paint.ino` — single self-contained sketch.
+## Size
+Flash ~8982 B (29%), RAM ~1609 B (78%).
