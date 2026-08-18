@@ -2,36 +2,41 @@
 
 Arduboy2 arduboy;
 
-const uint8_t CELL = 4;          // кисть/шаг сетки 4px
-const uint8_t GW = 32;           // 128/4
-const uint8_t GH = 16;           // 64/4
-uint8_t grid[GW * GH / 8];       // битовая упаковка: 64 байта
+// ===== НАСТРОЙКИ (менять здесь при написании кода) =====
+const uint8_t CELL = 8;          // размер сетки/кисти в пикселях (2,4,8,16 ...)
+// =======================================================
+
+const uint8_t GW = 128 / CELL;   // число клеток по X
+const uint8_t GH = 64 / CELL;    // число клеток по Y
+uint8_t grid[GW * GH / 8 + 1];   // битовая упаковка сетки
 
 const uint16_t HIST_MAX = 64;
 uint16_t history[HIST_MAX];      // запись: (индекс<<1)|oldVal
 uint16_t histHead = 0;
 
-int8_t cx = (GW / 2) * CELL;     // старт в центре сетки (64,32)
-int8_t cy = (GH / 2) * CELL;
-int8_t prevCx = (GW / 2) * CELL;
-int8_t prevCy = (GH / 2) * CELL;
+int16_t cx = (GW / 2) * CELL;    // старт в центре сетки
+int16_t cy = (GH / 2) * CELL;
+int16_t prevCx = (GW / 2) * CELL;
+int16_t prevCy = (GH / 2) * CELL;
 
 unsigned long lastMove = 0;
 const unsigned long REPEAT = 180; // мс между шагами при удержании
+unsigned long bPressStart = 0;    // время нажатия B (для tap/hold)
+bool bHandled = false;            // уже обработали тап/холд B в этой сессии нажатия
 
 bool getCell(uint8_t gx, uint8_t gy) {
-  uint8_t i = gx + gy * GW;
+  uint16_t i = gx + (uint16_t)gy * GW;
   return (grid[i >> 3] >> (i & 7)) & 1;
 }
 void setCell(uint8_t gx, uint8_t gy, bool v) {
-  uint8_t i = gx + gy * GW;
+  uint16_t i = gx + (uint16_t)gy * GW;
   if (v) grid[i >> 3] |= (1 << (i & 7));
   else   grid[i >> 3] &= ~(1 << (i & 7));
 }
 
 // записать изменение клетки в историю (для undo)
 void pushChange(uint8_t gx, uint8_t gy, bool oldVal) {
-  if (histHead >= HIST_MAX) return;     // стек полон — старейшие теряются
+  if (histHead >= HIST_MAX) return;
   uint16_t idx = gx + (uint16_t)gy * GW;
   history[histHead++] = (idx << 1) | (oldVal ? 1 : 0);
 }
@@ -49,9 +54,11 @@ void drawRegion(int16_t x, int16_t y, int16_t w, int16_t h) {
 }
 
 void setup() {
-  arduboy.begin();
+  arduboy.boot();              // голый hardware-init (быстро, без меню/audio)
+  arduboy.display();           // чистый экран
+  arduboy.bootLogo();          // анимация логотипа (как в begin(), но без лишнего)
   arduboy.setFrameRate(60);
-  for (uint8_t i = 0; i < sizeof(grid); i++) grid[i] = 0;
+  for (uint16_t i = 0; i < sizeof(grid); i++) grid[i] = 0;
   arduboy.clear();
   arduboy.display();
 }
@@ -73,14 +80,13 @@ void loop() {
     if (up)    cy -= CELL;
     if (down)  cy += CELL;
     if (cx < 0) cx = 0;
-    if (cx > 127 - CELL) cx = 127 - CELL;
+    if (cx > 128 - CELL) cx = 128 - CELL;
     if (cy < 0) cy = 0;
-    if (cy > 63 - CELL) cy = 63 - CELL;
+    if (cy > 64 - CELL) cy = 64 - CELL;
     lastMove = millis();
   }
 
-  // A — tap: тоггл клетки (закрасить/стереть); удержание (drag): повторяет
-  // действие первого тапа. Каждое реальное изменение клетки пишется в историю.
+  // A — tap: тоггл клетки; удержание (drag): повторяет действие первого тапа
   static bool aTarget = true;
   if (arduboy.justPressed(A_BUTTON)) {
     uint8_t gx = cx / CELL, gy = cy / CELL;
@@ -94,20 +100,37 @@ void loop() {
     if (aTarget != old) { setCell(gx, gy, aTarget); pushChange(gx, gy, old); }
   }
 
-  // B — undo: отменяет последнее действие A (по одной клетке, в обратном
-  // порядке), неважно рисовал или стирал — возвращает старое значение.
-  if (arduboy.justPressed(B_BUTTON) && histHead > 0) {
-    uint16_t rec = history[--histHead];
-    bool oldVal = rec & 1;
-    uint16_t idx = rec >> 1;
-    uint8_t gx = idx % GW;
-    uint8_t gy = idx / GW;
-    setCell(gx, gy, oldVal);
-    drawRegion(gx * CELL, gy * CELL, CELL, CELL); // перерисовать отменённую клетку
+  // B: tap = undo последнего действия A (по одной клетке, LIFO);
+  //    удержание (>=500 мс) = стереть весь холст.
+  if (arduboy.justPressed(B_BUTTON)) {
+    bPressStart = millis();
+    bHandled = false;
+  }
+  if (arduboy.pressed(B_BUTTON) && !bHandled) {
+    if (millis() - bPressStart >= 500) {
+      // долгое удержание -> очистить холст
+      for (uint16_t i = 0; i < sizeof(grid); i++) grid[i] = 0;
+      histHead = 0;                 // история тоже сбрасывается
+      arduboy.clear();
+      bHandled = true;
+    }
+  }
+  if (arduboy.justReleased(B_BUTTON) && !bHandled) {
+    // короткий тап -> undo
+    if (histHead > 0) {
+      uint16_t rec = history[--histHead];
+      bool oldVal = rec & 1;
+      uint16_t idx = rec >> 1;
+      uint8_t gx = idx % GW;
+      uint8_t gy = idx / GW;
+      setCell(gx, gy, oldVal);
+      drawRegion(gx * CELL, gy * CELL, CELL, CELL);
+    }
+    bHandled = true;
   }
 
   // убрать старый курсор
-  drawRegion(prevCx - 2, prevCy - 2, CELL + 4, CELL + 4);
+  drawRegion(prevCx - CELL, prevCy - CELL, CELL * 3, CELL * 3);
 
   // шахматка курсора (без обводок); при простое >=1 сек — анимация инверсией
   uint8_t phase = 0;

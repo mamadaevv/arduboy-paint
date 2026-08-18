@@ -11,12 +11,25 @@ libraries, so it compiles cleanly for the 328p.
 | Input | Action |
 |-------|--------|
 | **← → ↑ ↓** | Move cursor (one grid cell per tap; hold = repeat every ~180 ms) |
-| **A** (tap) | Toggle cell 4×4 (paint if empty, erase if filled) |
+| **A** (tap) | Toggle cell `CELL`×`CELL` (paint if empty, erase if filled) |
 | **A** (hold) | Drag-paint/erase — repeats the first tap's action along the path |
-| **B** | Undo last A action, one cell at a time (LIFO, 64 steps) |
+| **B** (tap) | Undo last A action, one cell at a time (LIFO, 64 steps) |
+| **B** (hold ≥500 ms) | Clear the entire canvas (resets undo history) |
 
-The cursor is a 4×4 checkerboard fill (no border). When idle for ≥1 s it
+The cursor is a `CELL`×`CELL` checkerboard fill (no border). When idle for ≥1 s it
 animates (the checkerboard pattern inverts every 250 ms).
+
+## Settings
+
+Edit at the top of `Paint.ino`:
+
+```cpp
+const uint8_t CELL = 8;   // grid/brush size in pixels (2, 4, 8, 16 ...)
+```
+
+All logic (grid, cursor, bounds, drawing) is derived from `CELL`. Screen is 128×64,
+so use a value that divides both. **Note:** cursor bounds use `128-CELL` / `64-CELL`
+(not `127`/`63`) so the bottom-right cell stays reachable.
 
 ## Hardware
 
@@ -43,10 +56,16 @@ $bp = 'D:\temp\paint_build'
 > 328p — always build with `-fno-lto`. The display must be SSD1306 @ 0x3C; the CH340
 > port often changes after re-plugging, so always check `board list` first.
 
-## Sizes (atmega328old, -fno-lto)
+## Fast boot
 
-- Flash: ~6374 B (20% of 30720)
-- RAM: ~1299 B (63% of 2048, 749 B free)
+`setup()` uses `arduboy.boot()` + `arduboy.bootLogo()` instead of `arduboy.begin()`,
+so it skips `systemButtons()` (the B-at-boot sound menu), `audio.begin()`, and
+`waitNoButtons()`. The logo animation is kept.
+
+## Sizes (atmega328old, -fno-lto, CELL=8)
+
+- Flash: ~6342 B (20% of 30720)
+- RAM: ~1260 B (61% of 2048, ~788 B free)
 
 ## Source
 
