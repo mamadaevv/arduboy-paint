@@ -129,12 +129,11 @@ void loop() {
       unsigned long t = millis() - introStart;
       if (t >= INTRO_MS) { transition(SPLASH); break; }
       // мерцание с не-линейным затуханием:
-      // вспышки всё дольше видимы, паузы всё короче -> в конце "замерло"
-      // фаза 0..1
+      // в начале — длинные паузы (короткие вспышки), к концу — плавно замирает
       float p = (float)t / (float)INTRO_MS;
-      // длительность "вкл" растёт 40мс -> 260мс, период сокращается
-      unsigned long period = 300 - (unsigned long)(p * 180); // 300 -> 120
-      unsigned long onDur  = 40  + (unsigned long)(p * 220);  // 40  -> 260
+      float p2 = p * p;                                   // квадрат -> резче в конце
+      unsigned long period = 420 - (unsigned long)(p * 300); // 420 -> 120
+      unsigned long onDur  = 20  + (unsigned long)(p2 * 400); // 20 -> 420 (к концу > period => горит)
       unsigned long ph = t % period;
       bool show = (ph < onDur);
       arduboy.clear();
