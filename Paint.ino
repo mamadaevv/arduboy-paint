@@ -3,7 +3,7 @@
 Arduboy2 arduboy;
 
 // ===== состояние экрана (сцены) =====
-enum Screen { SPLASH, MENU, SOON, SIZE_SELECT, HELP, PAINT, SPLASH_EXIT };
+enum Screen { SPLASH, MENU, SOON, SIZE_SELECT, HELP, PAINT, SPLASH_EXIT, MENU_EXIT };
 Screen screen = SPLASH;
 
 // ===== настройки сетки (меняются в рантайме) =====
@@ -154,8 +154,19 @@ void loop() {
         else { transition(SOON); soonStart = millis(); }
       }
       else if (NAV(B_BUTTON)) {
-        transition(SPLASH);
+        transStart = millis();
+        screen = MENU_EXIT;
+        navLock = true;
       }
+      break;
+    }
+
+    // ---------- АНИМАЦИЯ ПЕРЕХОДА МЕНЮ -> СПЛЭШ ----------
+    case MENU_EXIT: {
+      unsigned long t = millis() - transStart;
+      if (t >= TRANS_MS) { transition(SPLASH); break; }
+      transShift = (t * 14) / TRANS_MS;   // 0..14 px (лого опускается 4 -> 18)
+      if (transShift > 14) transShift = 14;
       break;
     }
 
@@ -304,17 +315,30 @@ void loop() {
         arduboy.print(items[i]);
       }
     }
-  } else if (screen == MENU) {
+  } else if (screen == MENU || screen == MENU_EXIT) {
+    bool anim = (screen == MENU_EXIT);
+    int logoY = anim ? (4 + transShift) : 4;   // лого опускается 4 -> 18
+    if (logoY > 18) logoY = 18;
     arduboy.clear();
     arduboy.setTextSize(2);
-    arduboy.setCursor(10, 4);
+    arduboy.setCursor(10, logoY);
     arduboy.print(F("Pixel Pic"));
-    arduboy.setTextSize(1);
-    const char* items[3] = {"Play", "Paint", "Help"};
-    for (uint8_t i = 0; i < 3; i++) {
-      arduboy.setCursor(24, 26 + i * 11);
-      if (i == menuSel) arduboy.print(F("> ")); else arduboy.print(F("  "));
-      arduboy.print(items[i]);
+    if (!anim) {
+      // обычное меню — пункты
+      arduboy.setTextSize(1);
+      const char* items[3] = {"Play", "Paint", "Help"};
+      for (uint8_t i = 0; i < 3; i++) {
+        arduboy.setCursor(24, 26 + i * 11);
+        if (i == menuSel) arduboy.print(F("> ")); else arduboy.print(F("  "));
+        arduboy.print(items[i]);
+      }
+    } else if (transShift >= 14) {
+      // в конце анимации — мигающий текст сплэша
+      arduboy.setTextSize(1);
+      if ((millis() / 400) & 1) {
+        arduboy.setCursor(30, 44);
+        arduboy.print(F("press any key"));
+      }
     }
   } else if (screen == SOON) {
     arduboy.clear();
