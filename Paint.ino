@@ -12,7 +12,7 @@ uint8_t gw, gh;          // число клеток (пересчитывает�
 uint8_t grid[256];       // битовая сетка (максимум при cell=2: 64*32=2048 бит)
 
 // меню / выбор
-uint8_t menuSel = 0;                 // 0 Play, 1 Gallery, 2 Paint
+uint8_t menuSel = 0;                 // 0 Play, 1 Gallery, 2 Paint, 3 Help
 uint8_t sizeOpts[4] = {2, 4, 8, 16};
 uint8_t sizeSel = 1;                 // индекс (default 4)
 const uint8_t HELP_LINES = 7;
@@ -42,13 +42,10 @@ bool bHandled = false;
 unsigned long abStart = 0;
 bool awaitRelease = false;   // после смены экрана ждём отпускания всех кнопок
 
-bool splashReady = false;   // становится true после отпускания кнопок на сплэше
-
 // смена экрана с защитой от залипа
 void goScreen(Screen s) {
   screen = s;
   awaitRelease = true;
-  if (s == SPLASH) splashReady = false;  // сплэш ждёт свежего нажатия (пасхалка-возврат)
 }
 
 // ===== сетка =====
@@ -110,13 +107,12 @@ void loop() {
 
     // ---------- СПЛЭШ ----------
     case SPLASH: {
-      if (arduboy.buttonsState() == 0) splashReady = true;  // отпустили -> готовы к переходу
       bool anyReleased =
           arduboy.justReleased(UP_BUTTON) || arduboy.justReleased(DOWN_BUTTON) ||
           arduboy.justReleased(LEFT_BUTTON) || arduboy.justReleased(RIGHT_BUTTON) ||
           arduboy.justReleased(A_BUTTON) || arduboy.justReleased(B_BUTTON);
-      // уходим ТОЛЬКО по отпусканию КНОПКИ (и только если сплэш "готов" — свежее нажатие)
-      if (anyReleased && !awaitRelease && splashReady) {
+      // уходим по отпусканию любой кнопки
+      if (anyReleased && !awaitRelease) {
         goScreen(MENU);
         menuSel = 0;
       }
@@ -125,14 +121,15 @@ void loop() {
 
     // ---------- МЕНЮ ----------
     case MENU: {
-      if (arduboy.justPressed(UP_BUTTON))   menuSel = (menuSel + 2) % 3;
-      if (arduboy.justPressed(DOWN_BUTTON)) menuSel = (menuSel + 1) % 3;
+      if (arduboy.justPressed(UP_BUTTON))   menuSel = (menuSel + 3) % 4;
+      if (arduboy.justPressed(DOWN_BUTTON)) menuSel = (menuSel + 1) % 4;
       // A — выбор пункта
       if (arduboy.justReleased(A_BUTTON) && !awaitRelease) {
         if (menuSel == 2) { goScreen(SIZE_SELECT); sizeSel = 1; }
+        else if (menuSel == 3) { goScreen(HELP); helpOff = 0; }
         else { goScreen(SOON); soonStart = millis(); }
       }
-      // B — пасхалка: вернуться на сплэш (без подписи в меню)
+      // B — назад на сплэш
       else if (arduboy.justReleased(B_BUTTON) && !awaitRelease) {
         goScreen(SPLASH);
       }
@@ -152,17 +149,12 @@ void loop() {
 
     // ---------- ВЫБОР РАЗМЕРА ----------
     case SIZE_SELECT: {
-      // B = Back, но НЕ если зажата A (иначе A+B-комбо сработает как Back)
-      if (arduboy.justPressed(B_BUTTON) && !arduboy.pressed(A_BUTTON)) { goScreen(MENU); }
-      else if (arduboy.justReleased(A_BUTTON) && !awaitRelease) {
-        // A+B (tap) — открыть справку; просто A — сразу в рисование
-        if (arduboy.pressed(B_BUTTON)) { goScreen(HELP); helpOff = 0; }
-        else { enterPaint(); }
-      }
       if (arduboy.justPressed(UP_BUTTON))   sizeSel = (sizeSel + 3) % 4;
       if (arduboy.justPressed(DOWN_BUTTON)) sizeSel = (sizeSel + 1) % 4;
       if (arduboy.justPressed(LEFT_BUTTON)) sizeSel = (sizeSel + 2) % 4;
       if (arduboy.justPressed(RIGHT_BUTTON)) sizeSel = (sizeSel + 2) % 4;
+      if (arduboy.justPressed(B_BUTTON)) { goScreen(MENU); }
+      else if (arduboy.justReleased(A_BUTTON) && !awaitRelease) { enterPaint(); }
       break;
     }
 
@@ -175,7 +167,7 @@ void loop() {
       if (arduboy.justPressed(DOWN_BUTTON)) helpOff += ROW_H;
       if (helpOff < HELP_MIN) helpOff = HELP_MIN;
       if (helpOff > HELP_MAX) helpOff = HELP_MAX;
-      if (arduboy.justPressed(B_BUTTON)) { goScreen(SIZE_SELECT); }
+      if (arduboy.justPressed(B_BUTTON)) { goScreen(MENU); }
       else if (arduboy.justReleased(A_BUTTON) && !awaitRelease) { enterPaint(); }
       break;
     }
@@ -281,12 +273,14 @@ void loop() {
     arduboy.setCursor(18, 4);
     arduboy.print(F("Pixel Pic"));
     arduboy.setTextSize(1);
-    const char* items[3] = {"Play", "Gallery", "Paint"};
-    for (uint8_t i = 0; i < 3; i++) {
+    const char* items[4] = {"Play", "Gallery", "Paint", "Help"};
+    for (uint8_t i = 0; i < 4; i++) {
       arduboy.setCursor(24, 26 + i * 11);
       if (i == menuSel) arduboy.print(F("> ")); else arduboy.print(F("  "));
       arduboy.print(items[i]);
     }
+    arduboy.setCursor(8, 56);
+    arduboy.print(F("A:Select  B:Back"));
   } else if (screen == SOON) {
     arduboy.clear();
     arduboy.setTextSize(1);
@@ -310,7 +304,7 @@ void loop() {
       arduboy.print(F("px"));
     }
     arduboy.setCursor(8, 56);
-    arduboy.print(F("A:Paint B:Back +Help"));
+    arduboy.print(F("A:Paint  B:Back"));
   } else if (screen == HELP) {
     arduboy.clear();
     arduboy.setTextSize(1);
