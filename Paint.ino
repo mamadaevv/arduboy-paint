@@ -260,7 +260,7 @@ void loop() {
   if (screen == SPLASH) {
     arduboy.clear();
     arduboy.setTextSize(2);
-    arduboy.setCursor(18, 18);
+    arduboy.setCursor(10, 18);
     arduboy.print(F("Pixel Pic"));
     arduboy.setTextSize(1);
     if ((millis() / 400) & 1) {
@@ -270,7 +270,7 @@ void loop() {
   } else if (screen == MENU) {
     arduboy.clear();
     arduboy.setTextSize(2);
-    arduboy.setCursor(18, 4);
+    arduboy.setCursor(10, 4);
     arduboy.print(F("Pixel Pic"));
     arduboy.setTextSize(1);
     const char* items[3] = {"Play", "Paint", "Help"};
