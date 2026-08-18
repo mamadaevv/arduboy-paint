@@ -47,10 +47,6 @@ unsigned long abStart = 0;
 bool navLock = false;
 
 void transition(Screen s) {
-  Serial.print(F("transition "));
-  Serial.print(screen);
-  Serial.print(F(" -> "));
-  Serial.println(s);
   screen = s;
   navLock = true;
 }
@@ -103,8 +99,6 @@ void enterPaint() {
 void setup() {
   arduboy.boot();
   arduboy.display();
-  Serial.begin(9600);
-  Serial.println(F("boot"));
   arduboy.bootLogo();
   arduboy.setFrameRate(60);
   splashStart = millis();
