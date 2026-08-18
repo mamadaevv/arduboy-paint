@@ -6,10 +6,20 @@ Arduboy2 arduboy;
 enum Screen { SPLASH_INTRO, SPLASH, MENU, SOON, SIZE_SELECT, HELP, PAINT, SPLASH_EXIT, MENU_EXIT };
 Screen screen = SPLASH_INTRO;
 
+// ===== геометрия интерфейса (константы вместо магии) =====
+const int LOGO_X = 10;
+const int LOGO_SPLASH_Y = 18;   // позиция лого на сплэше
+const int LOGO_MENU_Y   = 4;    // позиция лого в меню
+const int ROW_H = 11;           // строка справки 8px + 3px отступ
+const int HELP_TOP = 11;
+const int HELP_BOT = 52;
+const int HELP_VISIBLE = 4;      // видимых строк
+
 // ===== настройки сетки (меняются в рантайме) =====
 uint8_t cell = 4;        // текущий размер пикселя/кисти
 uint8_t gw, gh;          // число клеток (пересчитывается при входе в Paint)
-uint8_t grid[256];       // битовая сетка (максимум при cell=2: 64*32=2048 бит)
+uint8_t grid[256];       // битовая сетка (максимум при cell=2: 64*32=2048 бит = 256 байт)
+uint16_t dirtyCount = 0; // число закрашенных клеток -> O(1) проверка пустоты
 
 // меню / выбор
 uint8_t menuSel = 0;                 // 0 Play, 1 Paint, 2 Help
@@ -26,11 +36,12 @@ const char* helpLines[HELP_LINES] = {
   "A+B hold: exit",
 };
 int helpOff = 0;
-unsigned long splashStart = 0;
-unsigned long soonStart = 0;
-int transShift = 0;          // смещение анимации перехода (px)
+const int HELP_MIN = 0;
+const int HELP_MAX = (HELP_LINES - 1) * ROW_H - HELP_VISIBLE * ROW_H; // верхний предел скролла
+
 unsigned long transStart = 0; // время старта перехода
 const unsigned long TRANS_MS = 350; // длительность анимации
+int transShift = 0;          // смещение анимации перехода (px)
 unsigned long introStart = 0; // время старта анимации появления лого
 const unsigned long INTRO_MS = 1500; // длительность появления (мерцание)
 
@@ -66,18 +77,21 @@ bool getCell(uint8_t gx, uint8_t gy) {
 }
 void setCell(uint8_t gx, uint8_t gy, bool v) {
   uint16_t i = gx + (uint16_t)gy * gw;
-  if (v) grid[i >> 3] |= (1 << (i & 7));
-  else   grid[i >> 3] &= ~(1 << (i & 7));
+  bool old = (grid[i >> 3] >> (i & 7)) & 1;
+  if (v == old) return;
+  if (v) { grid[i >> 3] |= (1 << (i & 7)); dirtyCount++; }
+  else   { grid[i >> 3] &= ~(1 << (i & 7)); dirtyCount--; }
 }
 void pushChange(uint8_t gx, uint8_t gy, bool oldVal) {
   if (histHead >= HIST_MAX) return;
   uint16_t idx = gx + (uint16_t)gy * gw;
   history[histHead++] = (idx << 1) | (oldVal ? 1 : 0);
 }
-// реальная пустота холста: все биты сетки = 0
-bool isCanvasEmpty() {
-  for (uint16_t i = 0; i < sizeof(grid); i++) if (grid[i]) return false;
-  return true;
+// реальная пустота холста: нет закрашенных клеток (O(1))
+bool isCanvasEmpty() { return dirtyCount == 0; }
+void clearGrid() {
+  for (uint16_t i = 0; i < sizeof(grid); i++) grid[i] = 0;
+  dirtyCount = 0;
 }
 void drawRegion(int16_t x, int16_t y, int16_t w, int16_t h) {
   for (int16_t py = y; py < y + h; py++) {
@@ -90,12 +104,35 @@ void drawRegion(int16_t x, int16_t y, int16_t w, int16_t h) {
   }
 }
 
+// ===== отрисовка интерфейса (хелперы, убирают дубли) =====
+void drawLogo(int y) {
+  arduboy.setTextSize(2);
+  arduboy.setCursor(LOGO_X, y);
+  arduboy.print(F("Pixel Pic"));
+}
+void drawMenuItems() {
+  arduboy.setTextSize(1);
+  const char* items[3] = {"Play", "Paint", "Help"};
+  for (uint8_t i = 0; i < 3; i++) {
+    arduboy.setCursor(24, 26 + i * ROW_H);
+    if (i == menuSel) arduboy.print(F("> ")); else arduboy.print(F("  "));
+    arduboy.print(items[i]);
+  }
+}
+void drawPressAnyKey() {
+  arduboy.setTextSize(1);
+  if ((millis() / 400) & 1) {
+    arduboy.setCursor(22, 44);
+    arduboy.print(F("press any key"));
+  }
+}
+
 // ===== вход в режимы =====
 void enterPaint() {
   cell = sizeOpts[sizeSel];
   gw = 128 / cell;
   gh = 64 / cell;
-  for (uint16_t i = 0; i < sizeof(grid); i++) grid[i] = 0;
+  clearGrid();
   histHead = 0;
   cx = (gw / 2) * cell;
   cy = (gh / 2) * cell;
@@ -111,7 +148,6 @@ void setup() {
   arduboy.display();
   arduboy.bootLogo();
   arduboy.setFrameRate(60);
-  splashStart = millis();
   introStart = millis();   // старт анимации появления лого
 }
 
@@ -128,19 +164,14 @@ void loop() {
     case SPLASH_INTRO: {
       unsigned long t = millis() - introStart;
       if (t >= INTRO_MS) { transition(SPLASH); break; }
-      // мерцание с не-линейным затуханием:
+      // мерцание: целочисленная интерполяция (без float)
       // вспышки всё дольше видимы, паузы всё короче -> в конце "замерло"
-      float p = (float)t / (float)INTRO_MS;
-      unsigned long period = 300 - (unsigned long)(p * 180); // 300 -> 120
-      unsigned long onDur  = 40  + (unsigned long)(p * 220);  // 40  -> 260
-      unsigned long ph = t % period;
-      bool show = (ph < onDur);
+      unsigned long period = 300 - (t * 180) / INTRO_MS; // 300 -> 120
+      unsigned long onDur  = 40  + (t * 220) / INTRO_MS;  // 40  -> 260
+      bool show = (t % period) < onDur;
       arduboy.clear();
       if (show) {
-        // лого целиком, без мигания "press any key" (он появится в SPLASH)
-        arduboy.setTextSize(2);
-        arduboy.setCursor(10, 18);
-        arduboy.print(F("Pixel Pic"));
+        drawLogo(LOGO_SPLASH_Y);
       }
       break;
     }
@@ -163,9 +194,9 @@ void loop() {
     case SPLASH_EXIT: {
       unsigned long t = millis() - transStart;
       if (t >= TRANS_MS) { transition(MENU); break; }
-      // лого уезжает вверх, меню приезжает снизу (crossfade-slide)
-      transShift = (t * 64) / TRANS_MS;   // 0..64 px
-      if (transShift > 64) transShift = 64;
+      // лого уезжает вверх (18 -> 4), меню приезжает снизу
+      transShift = (t * (LOGO_SPLASH_Y - LOGO_MENU_Y)) / TRANS_MS; // 0..14
+      if (transShift > (LOGO_SPLASH_Y - LOGO_MENU_Y)) transShift = (LOGO_SPLASH_Y - LOGO_MENU_Y);
       break;
     }
 
@@ -176,7 +207,7 @@ void loop() {
       if (NAV(A_BUTTON)) {
         if (menuSel == 1) { transition(SIZE_SELECT); sizeSel = 1; }
         else if (menuSel == 2) { transition(HELP); helpOff = 0; }
-        else { transition(SOON); soonStart = millis(); }
+        else { transition(SOON); }
       }
       else if (NAV(B_BUTTON)) {
         transStart = millis();
@@ -191,8 +222,9 @@ void loop() {
     case MENU_EXIT: {
       unsigned long t = millis() - transStart;
       if (t >= TRANS_MS) { transition(SPLASH); break; }
-      transShift = (t * 14) / TRANS_MS;   // 0..14 px (лого опускается 4 -> 18)
-      if (transShift > 14) transShift = 14;
+      // лого опускается 4 -> 18
+      transShift = (t * (LOGO_SPLASH_Y - LOGO_MENU_Y)) / TRANS_MS; // 0..14
+      if (transShift > (LOGO_SPLASH_Y - LOGO_MENU_Y)) transShift = (LOGO_SPLASH_Y - LOGO_MENU_Y);
       break;
     }
 
@@ -218,9 +250,6 @@ void loop() {
 
     // ---------- СПРАВКА ----------
     case HELP: {
-      const int ROW_H = 11;               // строка 8px + 3px между -> 11/22/33/44
-      const int HELP_MIN = 0;
-      const int HELP_MAX = (HELP_LINES - 1) * ROW_H - 3 * ROW_H;  // ровно 4 видимые строки
       if (arduboy.justPressed(UP_BUTTON))   helpOff -= ROW_H;
       if (arduboy.justPressed(DOWN_BUTTON)) helpOff += ROW_H;
       if (helpOff < HELP_MIN) helpOff = HELP_MIN;
@@ -281,7 +310,7 @@ void loop() {
         if (arduboy.justPressed(B_BUTTON)) { bPressStart = millis(); bHandled = false; }
         if (arduboy.pressed(B_BUTTON) && !bHandled) {
           if (millis() - bPressStart >= 500) {
-            for (uint16_t i = 0; i < sizeof(grid); i++) grid[i] = 0;
+            clearGrid();
             histHead = 0;
             arduboy.clear();
             bHandled = true;
@@ -320,53 +349,24 @@ void loop() {
   if (screen == SPLASH || screen == SPLASH_EXIT) {
     arduboy.clear();
     bool anim = (screen == SPLASH_EXIT);
-    // одно лого, непрерывно переезжает с y=18 (сплэш) на y=4 (меню)
-    int logoY = anim ? (18 - transShift) : 18;
-    if (logoY < 4) logoY = 4;
-    arduboy.setTextSize(2);
-    arduboy.setCursor(10, logoY);
-    arduboy.print(F("Pixel Pic"));
+    int logoY = anim ? (LOGO_SPLASH_Y - transShift) : LOGO_SPLASH_Y;
+    if (logoY < LOGO_MENU_Y) logoY = LOGO_MENU_Y;
+    drawLogo(logoY);
     if (!anim) {
-      // на сплэше — мигающий текст
-      arduboy.setTextSize(1);
-      if ((millis() / 400) & 1) {
-        arduboy.setCursor(22, 44);
-        arduboy.print(F("press any key"));
-      }
-    } else if (transShift >= 14) {
-      // в конце анимации проявляются пункты меню (лого уже у цели)
-      arduboy.setTextSize(1);
-      const char* items[3] = {"Play", "Paint", "Help"};
-      for (uint8_t i = 0; i < 3; i++) {
-        arduboy.setCursor(24, 26 + i * 11);
-        if (i == menuSel) arduboy.print(F("> ")); else arduboy.print(F("  "));
-        arduboy.print(items[i]);
-      }
+      drawPressAnyKey();
+    } else if (transShift >= (LOGO_SPLASH_Y - LOGO_MENU_Y)) {
+      drawMenuItems();
     }
   } else if (screen == MENU || screen == MENU_EXIT) {
     bool anim = (screen == MENU_EXIT);
-    int logoY = anim ? (4 + transShift) : 4;   // лого опускается 4 -> 18
-    if (logoY > 18) logoY = 18;
+    int logoY = anim ? (LOGO_MENU_Y + transShift) : LOGO_MENU_Y;
+    if (logoY > LOGO_SPLASH_Y) logoY = LOGO_SPLASH_Y;
     arduboy.clear();
-    arduboy.setTextSize(2);
-    arduboy.setCursor(10, logoY);
-    arduboy.print(F("Pixel Pic"));
+    drawLogo(logoY);
     if (!anim) {
-      // обычное меню — пункты
-      arduboy.setTextSize(1);
-      const char* items[3] = {"Play", "Paint", "Help"};
-      for (uint8_t i = 0; i < 3; i++) {
-        arduboy.setCursor(24, 26 + i * 11);
-        if (i == menuSel) arduboy.print(F("> ")); else arduboy.print(F("  "));
-        arduboy.print(items[i]);
-      }
-    } else if (transShift >= 14) {
-      // в конце анимации — мигающий текст сплэша
-      arduboy.setTextSize(1);
-      if ((millis() / 400) & 1) {
-        arduboy.setCursor(22, 44);
-        arduboy.print(F("press any key"));
-      }
+      drawMenuItems();
+    } else if (transShift >= (LOGO_SPLASH_Y - LOGO_MENU_Y)) {
+      drawPressAnyKey();
     }
   } else if (screen == SOON) {
     arduboy.clear();
@@ -394,26 +394,23 @@ void loop() {
     arduboy.setTextSize(1);
     arduboy.setCursor(8, 2);
     arduboy.print(F("Help: Paint Mode"));
-    const int ROW_H = 11;
-    const int TOP = 11;
-    const int BOT = 52;
-    if (helpOff > 0) {
+    if (helpOff > HELP_MIN) {
       for (uint8_t k = 0; k < 4; k++) {
-        arduboy.drawPixel(120 - k, TOP + k);
-        arduboy.drawPixel(120 + k, TOP + k);
+        arduboy.drawPixel(120 - k, HELP_TOP + k);
+        arduboy.drawPixel(120 + k, HELP_TOP + k);
       }
     }
-    if (helpOff < (HELP_LINES - 1) * ROW_H - 3 * ROW_H) {
+    if (helpOff < HELP_MAX) {
       for (uint8_t k = 0; k < 4; k++) {
-        arduboy.drawPixel(120 - k, BOT - k);
-        arduboy.drawPixel(120 + k, BOT - k);
+        arduboy.drawPixel(120 - k, HELP_BOT - k);
+        arduboy.drawPixel(120 + k, HELP_BOT - k);
       }
     }
     uint8_t startIdx = helpOff / ROW_H;
-    for (uint8_t r = 0; r < 4; r++) {
+    for (uint8_t r = 0; r < HELP_VISIBLE; r++) {
       uint8_t i = startIdx + r;
       if (i >= HELP_LINES) break;
-      arduboy.setCursor(8, TOP + r * ROW_H);
+      arduboy.setCursor(8, HELP_TOP + r * ROW_H);
       arduboy.print(helpLines[i]);
     }
   }
