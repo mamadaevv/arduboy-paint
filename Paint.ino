@@ -32,7 +32,7 @@ int transShift = 0;          // смещение анимации переход
 unsigned long transStart = 0; // время старта перехода
 const unsigned long TRANS_MS = 350; // длительность анимации
 unsigned long introStart = 0; // время старта анимации появления лого
-const unsigned long INTRO_MS = 900; // длительность появления (мерцание)
+const unsigned long INTRO_MS = 1500; // длительность появления (мерцание)
 
 // ===== Paint: состояние =====
 const uint16_t HIST_MAX = 32;
