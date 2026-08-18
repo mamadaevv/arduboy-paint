@@ -281,29 +281,38 @@ void loop() {
   if (screen == SPLASH || screen == SPLASH_EXIT) {
     arduboy.clear();
     bool anim = (screen == SPLASH_EXIT);
-    int logoY = 18 - (anim ? transShift : 0);        // уезжает вверх
-    if (logoY > 18) logoY = 18;
+    // одно лого, непрерывно переезжает с y=18 (сплэш) на y=4 (меню)
+    int logoY = anim ? (18 - transShift) : 18;
+    if (logoY < 4) logoY = 4;
     arduboy.setTextSize(2);
     arduboy.setCursor(10, logoY);
     arduboy.print(F("Pixel Pic"));
     if (!anim) {
+      // на сплэше — мигающий текст
       arduboy.setTextSize(1);
       if ((millis() / 400) & 1) {
         arduboy.setCursor(30, 44);
         arduboy.print(F("press any key"));
       }
+    } else if (transShift >= 14) {
+      // в конце анимации проявляются пункты меню (лого уже у цели)
+      arduboy.setTextSize(1);
+      const char* items[3] = {"Play", "Paint", "Help"};
+      for (uint8_t i = 0; i < 3; i++) {
+        arduboy.setCursor(24, 26 + i * 11);
+        if (i == menuSel) arduboy.print(F("> ")); else arduboy.print(F("  "));
+        arduboy.print(items[i]);
+      }
     }
-  } else if (screen == MENU || screen == SPLASH_EXIT) {
-    // на SPLASH_EXIT меню приезжает снизу
-    int menuShift = (screen == SPLASH_EXIT) ? (64 - transShift) : 0;
+  } else if (screen == MENU) {
     arduboy.clear();
     arduboy.setTextSize(2);
-    arduboy.setCursor(10, 4 + menuShift);
+    arduboy.setCursor(10, 4);
     arduboy.print(F("Pixel Pic"));
     arduboy.setTextSize(1);
     const char* items[3] = {"Play", "Paint", "Help"};
     for (uint8_t i = 0; i < 3; i++) {
-      arduboy.setCursor(24, 26 + i * 11 + menuShift);
+      arduboy.setCursor(24, 26 + i * 11);
       if (i == menuSel) arduboy.print(F("> ")); else arduboy.print(F("  "));
       arduboy.print(items[i]);
     }
