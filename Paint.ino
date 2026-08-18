@@ -3,7 +3,7 @@
 Arduboy2 arduboy;
 
 // ===== состояние экрана (сцены) =====
-enum Screen { SPLASH, MENU, SOON, SIZE_SELECT, HELP, PAINT };
+enum Screen { SPLASH, MENU, SOON, SIZE_SELECT, HELP, PAINT, SPLASH_EXIT };
 Screen screen = SPLASH;
 
 // ===== настройки сетки (меняются в рантайме) =====
@@ -28,6 +28,9 @@ const char* helpLines[HELP_LINES] = {
 int helpOff = 0;
 unsigned long splashStart = 0;
 unsigned long soonStart = 0;
+int transShift = 0;          // смещение анимации перехода (px)
+unsigned long transStart = 0; // время старта перехода
+const unsigned long TRANS_MS = 350; // длительность анимации
 
 // ===== Paint: состояние =====
 const uint16_t HIST_MAX = 32;
@@ -120,12 +123,24 @@ void loop() {
 
     // ---------- СПЛЭШ ----------
     case SPLASH: {
-      // любая кнопка -> Меню (по фронту нажатия)
+      // любая кнопка -> запуск анимации уезжающего лого
       if (NAV(UP_BUTTON) || NAV(DOWN_BUTTON) || NAV(LEFT_BUTTON) ||
           NAV(RIGHT_BUTTON) || NAV(A_BUTTON) || NAV(B_BUTTON)) {
-        transition(MENU);
+        transStart = millis();
         menuSel = 0;
+        screen = SPLASH_EXIT;
+        navLock = true;
       }
+      break;
+    }
+
+    // ---------- АНИМАЦИЯ ПЕРЕХОДА СПЛЭШ -> МЕНЮ ----------
+    case SPLASH_EXIT: {
+      unsigned long t = millis() - transStart;
+      if (t >= TRANS_MS) { transition(MENU); break; }
+      // лого уезжает вверх, меню приезжает снизу (crossfade-slide)
+      transShift = (t * 64) / TRANS_MS;   // 0..64 px
+      if (transShift > 64) transShift = 64;
       break;
     }
 
@@ -263,25 +278,32 @@ void loop() {
   }
 
   // ----- отрисовка экранов (кроме PAINT — там инкрементально) -----
-  if (screen == SPLASH) {
+  if (screen == SPLASH || screen == SPLASH_EXIT) {
     arduboy.clear();
+    bool anim = (screen == SPLASH_EXIT);
+    int logoY = 18 - (anim ? transShift : 0);        // уезжает вверх
+    if (logoY > 18) logoY = 18;
     arduboy.setTextSize(2);
-    arduboy.setCursor(10, 18);
+    arduboy.setCursor(10, logoY);
     arduboy.print(F("Pixel Pic"));
-    arduboy.setTextSize(1);
-    if ((millis() / 400) & 1) {
-      arduboy.setCursor(30, 44);
-      arduboy.print(F("press any key"));
+    if (!anim) {
+      arduboy.setTextSize(1);
+      if ((millis() / 400) & 1) {
+        arduboy.setCursor(30, 44);
+        arduboy.print(F("press any key"));
+      }
     }
-  } else if (screen == MENU) {
+  } else if (screen == MENU || screen == SPLASH_EXIT) {
+    // на SPLASH_EXIT меню приезжает снизу
+    int menuShift = (screen == SPLASH_EXIT) ? (64 - transShift) : 0;
     arduboy.clear();
     arduboy.setTextSize(2);
-    arduboy.setCursor(10, 4);
+    arduboy.setCursor(10, 4 + menuShift);
     arduboy.print(F("Pixel Pic"));
     arduboy.setTextSize(1);
     const char* items[3] = {"Play", "Paint", "Help"};
     for (uint8_t i = 0; i < 3; i++) {
-      arduboy.setCursor(24, 26 + i * 11);
+      arduboy.setCursor(24, 26 + i * 11 + menuShift);
       if (i == menuSel) arduboy.print(F("> ")); else arduboy.print(F("  "));
       arduboy.print(items[i]);
     }
