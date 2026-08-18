@@ -15,18 +15,15 @@ uint8_t grid[256];       // битовая сетка (максимум при c
 uint8_t menuSel = 0;                 // 0 Play, 1 Gallery, 2 Paint
 uint8_t sizeOpts[4] = {2, 4, 8, 16};
 uint8_t sizeSel = 1;                 // индекс (default 4)
-const uint8_t HELP_LINES = 10;
+const uint8_t HELP_LINES = 7;
 const char* helpLines[HELP_LINES] = {
-  "PAINT MODE",
-  "",
   "Arrows: move",
   "A: draw/erase",
-  "Hold A: drag",
+  "A hold: drag",
   "B tap: undo",
   "B hold: clear",
   "",
-  "Hold A+B exit",
-  "Back: B menu",
+  "A+B hold: exit",
 };
 int helpOff = 0;
 unsigned long splashStart = 0;
@@ -304,7 +301,7 @@ void loop() {
     arduboy.clear();
     arduboy.setTextSize(1);
     arduboy.setCursor(8, 2);
-    arduboy.print(F("Help"));
+    arduboy.print(F("Help: Paint Mode"));
     const int ROW_H = 11;          // строка 8px + 3px между -> 11/22/33/44
     const int TOP = 11;            // верхний край первой строки
     const int BOT = 52;            // нижний край области (для стрелки)
