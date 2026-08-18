@@ -261,18 +261,20 @@ void loop() {
           lastMove = millis();
         }
 
-        // A — рисование (пропускаем при выходе)
-        static bool aTarget = true;
-        if (arduboy.justPressed(A_BUTTON)) {
-          uint8_t gx = cx / cell, gy = cy / cell;
-          bool old = getCell(gx, gy);
-          aTarget = !old;
-          if (aTarget != old) { setCell(gx, gy, aTarget); pushChange(gx, gy, old); }
-        }
-        if (arduboy.pressed(A_BUTTON)) {
-          uint8_t gx = cx / cell, gy = cy / cell;
-          bool old = getCell(gx, gy);
-          if (aTarget != old) { setCell(gx, gy, aTarget); pushChange(gx, gy, old); }
+        // A — рисование (пропускаем при выходе и пока кнопка не отпущена после входа)
+        if (!navLock) {
+          static bool aTarget = true;
+          if (arduboy.justPressed(A_BUTTON)) {
+            uint8_t gx = cx / cell, gy = cy / cell;
+            bool old = getCell(gx, gy);
+            aTarget = !old;
+            if (aTarget != old) { setCell(gx, gy, aTarget); pushChange(gx, gy, old); }
+          }
+          if (arduboy.pressed(A_BUTTON)) {
+            uint8_t gx = cx / cell, gy = cy / cell;
+            bool old = getCell(gx, gy);
+            if (aTarget != old) { setCell(gx, gy, aTarget); pushChange(gx, gy, old); }
+          }
         }
 
         // B — tap: на пустом холсте = назад в меню, иначе undo; hold = clear
