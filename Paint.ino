@@ -157,7 +157,7 @@ void loop() {
 
     // ---------- СПРАВКА ----------
     case HELP: {
-      const int ROW_H = 10;               // строка 8px + 2px между
+      const int ROW_H = 11;               // строка 8px + 3px между -> 11/22/33/44
       const int HELP_MIN = 0;
       const int HELP_MAX = (HELP_LINES - 1) * ROW_H - 3 * ROW_H;  // ровно 4 видимые строки
       if (arduboy.justPressed(UP_BUTTON))   helpOff -= ROW_H;
@@ -305,7 +305,7 @@ void loop() {
     arduboy.setTextSize(1);
     arduboy.setCursor(8, 2);
     arduboy.print(F("Help"));
-    const int ROW_H = 10;          // строка 8px + 2px между
+    const int ROW_H = 11;          // строка 8px + 3px между -> 11/22/33/44
     const int TOP = 11;            // верхний край первой строки
     const int BOT = 52;            // нижний край области (для стрелки)
     // аффорданс скролла: треугольники остриём к краям области (x=120)
@@ -321,12 +321,12 @@ void loop() {
         arduboy.drawPixel(120 + k, BOT - k);
       }
     }
-    // 4 видимые строки; строки вне области не рисуем
-    for (uint8_t i = 0; i < HELP_LINES; i++) {
-      int y = TOP + i * ROW_H - helpOff;
-      if (y > BOT) break;
-      if (y < TOP - ROW_H) continue;
-      arduboy.setCursor(8, y);
+    // ровно 4 видимые строки на фиксированных y; меняется только содержимое
+    uint8_t startIdx = helpOff / ROW_H;
+    for (uint8_t r = 0; r < 4; r++) {
+      uint8_t i = startIdx + r;
+      if (i >= HELP_LINES) break;
+      arduboy.setCursor(8, TOP + r * ROW_H);
       arduboy.print(helpLines[i]);
     }
     arduboy.setCursor(8, 56);
