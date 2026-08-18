@@ -279,8 +279,6 @@ void loop() {
       if (i == menuSel) arduboy.print(F("> ")); else arduboy.print(F("  "));
       arduboy.print(items[i]);
     }
-    arduboy.setCursor(8, 56);
-    arduboy.print(F("A:Select  B:Back"));
   } else if (screen == SOON) {
     arduboy.clear();
     arduboy.setTextSize(1);
@@ -303,8 +301,6 @@ void loop() {
       arduboy.print(sizeOpts[i]);
       arduboy.print(F("px"));
     }
-    arduboy.setCursor(8, 56);
-    arduboy.print(F("A:Paint  B:Back"));
   } else if (screen == HELP) {
     arduboy.clear();
     arduboy.setTextSize(1);
@@ -334,8 +330,6 @@ void loop() {
       arduboy.setCursor(8, TOP + r * ROW_H);
       arduboy.print(helpLines[i]);
     }
-    arduboy.setCursor(8, 56);
-    arduboy.print(F("A:OK  B:Back"));
   }
 
   arduboy.display();
