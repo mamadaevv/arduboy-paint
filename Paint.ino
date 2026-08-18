@@ -127,6 +127,7 @@ void loop() {
       if (NAV(UP_BUTTON) || NAV(DOWN_BUTTON) || NAV(LEFT_BUTTON) ||
           NAV(RIGHT_BUTTON) || NAV(A_BUTTON) || NAV(B_BUTTON)) {
         transStart = millis();
+        transShift = 0;
         menuSel = 0;
         screen = SPLASH_EXIT;
         navLock = true;
@@ -155,6 +156,7 @@ void loop() {
       }
       else if (NAV(B_BUTTON)) {
         transStart = millis();
+        transShift = 0;
         screen = MENU_EXIT;
         navLock = true;
       }
@@ -302,7 +304,7 @@ void loop() {
       // на сплэше — мигающий текст
       arduboy.setTextSize(1);
       if ((millis() / 400) & 1) {
-        arduboy.setCursor(30, 44);
+        arduboy.setCursor(22, 44);
         arduboy.print(F("press any key"));
       }
     } else if (transShift >= 14) {
@@ -336,7 +338,7 @@ void loop() {
       // в конце анимации — мигающий текст сплэша
       arduboy.setTextSize(1);
       if ((millis() / 400) & 1) {
-        arduboy.setCursor(30, 44);
+        arduboy.setCursor(22, 44);
         arduboy.print(F("press any key"));
       }
     }
