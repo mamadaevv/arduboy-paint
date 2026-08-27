@@ -1,0 +1,11 @@
+# Build artifacts
+*.hex
+*.elf
+*.map
+build/
+out/
+*.tmp
+
+# OS / editor
+.DS_Store
+*.swp
