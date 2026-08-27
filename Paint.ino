@@ -1,10 +1,29 @@
 #include <Arduboy2.h>
+#include <ArduboyTones.h>
 
 Arduboy2 arduboy;
+ArduboyTones sound(arduboy.audio.enabled);  // SLIMBOY: спикер D9+D11 (push-pull)
 
 // ===== состояние экрана (сцены) =====
+// объявлено ДО любых функций, чтобы автопрототипы arduino-cli
+// (void transition(Screen)) видели тип Screen
 enum Screen { SPLASH_INTRO, SPLASH, MENU, SOON, SIZE_SELECT, HELP, PAINT, SPLASH_EXIT, MENU_EXIT };
 Screen screen = SPLASH_INTRO;
+
+// ===== AUDIO (SLIMBOY канон: спикер D9 + D11, push-pull) =====
+// Мелодия включения: пары freq, dur (мс), завершается 0
+const uint16_t STARTUP_MELODY[] PROGMEM = {
+  523, 150, 659, 150, 784, 150, 1047, 300, 784, 150, 1047, 400, 0
+};
+
+// мелодия при включении (неблокирующая, играет в фоне через ISR)
+void playStartupMelody() {
+  sound.tones(STARTUP_MELODY);
+}
+
+// звуки кнопок — разные
+void beepButtonA() { sound.tone(1318, 30); }  // E6 — высокий щелчок
+void beepButtonB() { sound.tone(523, 30);  }  // C5 — низкий щелчок
 
 // ===== геометрия интерфейса (константы вместо магии) =====
 const int LOGO_X = 10;
@@ -147,7 +166,9 @@ void setup() {
   arduboy.boot();
   arduboy.display();
   arduboy.bootLogo();
+  arduboy.audio.on();      // включить звук (канон Arduboy: push-pull D5+D13)
   arduboy.setFrameRate(60);
+  playStartupMelody();     // мелодия включения
   introStart = millis();   // старт анимации появления лого
 }
 
@@ -294,6 +315,7 @@ void loop() {
         if (!navLock) {
           static bool aTarget = true;
           if (arduboy.justPressed(A_BUTTON)) {
+            beepButtonA();   // звук нажатия A
             uint8_t gx = cx / cell, gy = cy / cell;
             bool old = getCell(gx, gy);
             aTarget = !old;
@@ -307,7 +329,7 @@ void loop() {
         }
 
         // B — tap: на пустом холсте = назад в меню, иначе undo; hold = clear
-        if (arduboy.justPressed(B_BUTTON)) { bPressStart = millis(); bHandled = false; }
+        if (arduboy.justPressed(B_BUTTON)) { bPressStart = millis(); bHandled = false; beepButtonB(); }
         if (arduboy.pressed(B_BUTTON) && !bHandled) {
           if (millis() - bPressStart >= 500) {
             clearGrid();
